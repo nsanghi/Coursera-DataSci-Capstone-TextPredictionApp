@@ -1,0 +1,169 @@
+---
+title: "Swiftkey MIlestone Report"
+author: "Nimish Sanghi"
+date: "11/26/2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+The purpose of this report is to:
+
+1. Demonstrate that data was downloaded successfully loaded it in R.
+2. Create a basic report of summary statistics about the data sets.
+3. Report any interesting findings 
+4. Get feedback on the plans for creating a prediction algorithm and Shiny app.
+
+## Data Loading and Sampling
+We will start with loading the data in R, followed by sampling to extract a representative set and then saving the sampled data back for future. We will also load all the required libraries. The data form three sources - blogs, news and twitter will be sampled and merged into a single file and saved back to disk with a name "samples.txt".
+
+* Loading the Libraries
+```{r libraries, warning=FALSE, error=FALSE, message=FALSE}
+library(tm)
+library(SnowballC)
+library(ggplot2)
+library(rJava) 
+.jinit(parameters="-Xmx128g")
+library(RWeka)
+```
+
+* loading each of the three files and sampling a subset. The seed is set to 1310 to ensure reproducible.
+
+```{r loaddata, warning=FALSE, error=FALSE, message=FALSE}
+
+#read ramdom samples from blogs text file
+setwd("~/Coursera/DataScience/data-science-project/finalProject")
+con <- file("./final/en_US/en_US.blogs.txt","r")
+blogs <- readLines(con, skipNul = TRUE)
+blog_count <- length(blogs)
+set.seed(1310)
+blogs <- blogs[sample(length(blogs),0.01*length(blogs))]
+close(con)
+
+#read random samples from news text file
+con <- file("./final/en_US/en_US.news.txt","r")
+news <- readLines(con, skipNul = TRUE)
+news_count <- length(news)
+set.seed(1310)
+news <- news[sample(length(news),0.01*length(news))]
+close(con)
+
+#read random samples from twitter text file
+con <- file("./final/en_US/en_US.twitter.txt","r")
+tweets <- readLines(con, skipNul = TRUE)
+tweet_count <- length(tweets)
+set.seed(1310)
+tweets <- tweets[sample(length(tweets),0.01*length(tweets))]
+close(con)
+
+
+#combine the samples into a single file and write it back on disk
+docs <- c(blogs, news, tweets)
+sample_length <- length(docs)
+con <- file("samples.txt")
+writeLines(docs, con)
+close(con)
+
+#clean workspace
+rm(tweets, docs, blogs, news)
+```
+
+The three files in total have **`r blog_count`** blog items, **`r news_count`** news items and **`r tweet_count`** tweets. Out of this, I sampled a total of **`r sample_length`** items for the following analysis. 
+
+## Sample Data preprocessing
+
+At this point the data will be re processed using the tm package. Following steps are performed
+  * read the saved sample text file as a VCorpus
+  * remove Punctuation
+  * remove numbers
+  * make everything lowercase
+  * remove common English stopwords
+  * remove profanity words
+  * strip extra whitespaces
+  * stem the words
+
+These steps will make sample corpus ready for finding summary statistics of the word distribution.
+
+```{r preprocess, warning=FALSE, error=FALSE, message=FALSE}
+#read sample docs for text processing
+setwd("~/Coursera/DataScience/data-science-project/finalProject")
+con <- file("samples.txt","r")
+docs <- VCorpus(VectorSource(readLines(con, skipNul = TRUE)))
+close(con)
+
+
+# pre processing
+docs <- tm_map(docs, removePunctuation)
+docs <- tm_map(docs, removeNumbers)
+docs <- tm_map(docs, tolower)
+docs <- tm_map(docs, removeWords, stopwords("english"))
+
+# remove profanity words as found in the url
+# https://raw.githubusercontent.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words/master/en
+profanityWords <- readLines("https://raw.githubusercontent.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words/master/en")
+docs <- tm_map(docs, removeWords, profanityWords)
+
+#rest of pre processsing
+docs <- tm_map(docs, stripWhitespace)
+# stemming
+docs <- tm_map(docs, stemDocument, language = "english")
+```
+
+## N-Gram distributions
+
+* We will first do a term distribution to see the relative frequency of words in the sample corpus
+```{r unigram_model, warning=FALSE, error=FALSE, message=FALSE}
+# Prepare and plot bi-grams
+unigram <- NGramTokenizer(docs, Weka_control(min = 1, max = 1,delimiters = " \\r\\n\\t.,;:\"()?!"))
+unigram <- data.frame(table(unigram))
+unigram <- unigram[order(unigram$Freq,decreasing = TRUE),]
+colnames(unigram) <- c("word","freq")
+unigram$word <- factor(unigram$word, levels = unigram$word)
+
+ggplot(unigram[1:20,], aes(x=word,y=freq)) + 
+  geom_bar(stat="Identity", fill="#E69F00") +
+  geom_text(aes(label=freq, angle=90), hjust=1.50) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+* Exploring bi-gram distribution in the sample corpus
+
+```{r bigram_model, warning=FALSE, error=FALSE, message=FALSE}
+# Prepare and plot bi-grams
+bigram <- NGramTokenizer(docs, Weka_control(min = 2, max = 2,delimiters = " \\r\\n\\t.,;:\"()?!"))
+bigram <- data.frame(table(bigram))
+bigram <- bigram[order(bigram$Freq,decreasing = TRUE),]
+colnames(bigram) <- c("word","freq")
+bigram$word <- factor(bigram$word, levels = bigram$word)
+
+ggplot(bigram[1:20,], aes(x=word,y=freq)) + 
+  geom_bar(stat="Identity", fill="#E69F00") +
+  geom_text(aes(label=freq, angle=90), hjust=1.50) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+* Exploring tri-gram distribution in the sample corpus
+
+```{r trigram_model, warning=FALSE, error=FALSE, message=FALSE}
+# Prepare and plot tri-grams
+trigram <- NGramTokenizer(docs, Weka_control(min = 3, max = 3,delimiters = " \\r\\n\\t.,;:\"()?!"))
+trigram <- data.frame(table(trigram))
+trigram <- trigram[order(trigram$Freq,decreasing = TRUE),]
+colnames(trigram) <- c("word","freq")
+trigram$word <- factor(trigram$word, levels = trigram$word)
+
+ggplot(trigram[1:20,], aes(x=word,y=freq)) + 
+  geom_bar(stat="Identity", fill="#E69F00") +
+  geom_text(aes(label=freq, angle=90), hjust=1.50) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## Interesting findings And Next Steps
+
+The plot of bigram and trigram shows a good overlap i.e. the most frequent trigrams also have parts of it appear in most frequent bigrams. This seems to indicate that we could, in first pass, stick to bigram based prediction model. I plan to us Laplace smoothing with bigram to build the prediction model.
+
+I will also build a shiny app which will have a test field and a button. Once you enter a phrase in the input field and click the button, it will guess the next best word to extend the input phase. 
